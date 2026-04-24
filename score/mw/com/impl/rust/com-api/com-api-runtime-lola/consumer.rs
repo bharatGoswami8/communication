@@ -40,7 +40,7 @@ use futures::task::{AtomicWaker, Context, Poll};
 use std::cmp::Ordering;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, AtomicUsize};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use com_api_concept::{
     Builder, CommData, Consumer, ConsumerBuilder, ConsumerDescriptor, ConsumerFailedReason, Error,
@@ -330,6 +330,7 @@ impl<T: CommData + Debug> Subscriber<T, LolaRuntimeImpl> for SubscribableImpl<T>
             instance_info,
             waker_storage: Arc::default(),
             async_init_status: std::sync::Once::new(),
+            inner_container: Mutex::new(Some(SampleContainer::new(max_num_samples))),
             _proxy: self.proxy_instance.clone(),
             _phantom: PhantomData,
         })
@@ -425,7 +426,7 @@ impl<'a> DerefMut for ProxyEventManagerGuard<'a> {
 /// the proxy event pointer and ensure thread safety during receive operations.
 /// It also manages the asynchronous initialization of the receive callback
 /// and the waker storage for async notifications when new samples arrive.
-#[derive(Debug)]
+//#[derive(Debug)]
 pub struct SubscriberImpl<T>
 where
     T: CommData + Debug,
@@ -436,6 +437,7 @@ where
     instance_info: LolaConsumerInfo,
     waker_storage: Arc<AtomicWaker>,
     async_init_status: std::sync::Once,
+    inner_container: Mutex<Option<SampleContainer<Sample<T>>>>,
     _proxy: ProxyInstanceManager,
     _phantom: PhantomData<T>,
 }
@@ -562,11 +564,15 @@ where
                 self.init_async_receive(&mut event_guard)
                     .expect("Failed to initialize async receive callback");
             });
+            // Store scratch into inner_container for cancellation safety.
+            //TODO; We need to check if inner conatineer already holding sample container then
+            // we should comapre the sample and push on inner container
+            *self.inner_container.lock().unwrap() = Some(scratch);
             ReceiveFuture {
                 event_guard: Some(event_guard),
                 waker_storage: Arc::clone(&self.waker_storage),
                 max_num_samples: self.max_num_samples,
-                scratch: Some(scratch),
+                inner_container: &self.inner_container,
                 new_samples,
                 max_samples,
                 total_received: 0,
@@ -581,11 +587,14 @@ where
 // a waker storage for async notifications, and parameters for managing the receive operation.
 // The Future implementation for ReceiveFuture defines the polling logic,
 // which attempts to receive samples and manages the state of the receive operation.
+// inner_container is borrowed from SubscriberImpl (&'a) so that if this future
+// is dropped before completion (e.g. timeout cancellation), any partial samples
+// already collected remain alive inside SubscriberImpl.inner_container.
 struct ReceiveFuture<'a, T: CommData + Debug> {
     event_guard: Option<ProxyEventManagerGuard<'a>>,
     waker_storage: Arc<AtomicWaker>,
     max_num_samples: usize,
-    scratch: Option<SampleContainer<Sample<T>>>,
+    inner_container: &'a Mutex<Option<SampleContainer<Sample<T>>>>,
     new_samples: usize,
     max_samples: usize,
     total_received: usize,
@@ -605,23 +614,26 @@ impl<'a, T: CommData + Debug> Future for ReceiveFuture<'a, T> {
         self.waker_storage.register(ctx.waker());
 
         let samples_received = {
-            // Temporarily take ownership of scratch to avoid borrow issues
-            if let Some(mut scratch) = self.scratch.take() {
+            // Lock the container and operate on it in-place (no take/put-back).
+            // Locking here is fine because inner_container is a &'a Mutex (reference),
+            // so the lock guard does not borrow `self`, allowing self.event_guard.as_mut()
+            // to be accessed independently.
+            let mut container_guard = self.inner_container.lock().unwrap();
+            if let Some(scratch) = container_guard.as_mut() {
                 if let Some(event_guard) = self.event_guard.as_mut() {
-                    let result = try_receive_samples::<T>(
+                    try_receive_samples::<T>(
                         event_guard.deref_mut(),
-                        &mut scratch,
+                        scratch,
                         max_num_samples,
                         max_samples - total_received,
-                    );
-                    self.scratch = Some(scratch);
-                    result
+                    )
                 } else {
                     Err(Error::ReceiveError(ReceiveFailedReason::ReceiveError))
                 }
             } else {
                 Err(Error::ReceiveError(ReceiveFailedReason::BufferUnavailable))
             }
+            // container_guard drops here, releasing the lock
         };
         match samples_received {
             Ok(count) => {
@@ -631,9 +643,13 @@ impl<'a, T: CommData + Debug> Future for ReceiveFuture<'a, T> {
                 if self.total_received >= new_samples {
                     //event_guard will be dropped here, allowing new receive calls to access the
                     // proxy event
+                    // Drop event_guard first to release the concurrent receive lock
+                    // before taking the container out.
                     self.event_guard = None;
                     return Poll::Ready(Ok(self
-                        .scratch
+                        .inner_container
+                        .lock()
+                        .unwrap()
                         .take()
                         .expect("SampleContainer is not available when returning Future result")));
                 }
