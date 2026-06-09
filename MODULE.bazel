@@ -39,6 +39,7 @@ git_override(
 )
 
 bazel_dep(name = "score_baselibs_rust", version = "0.1.0")
+bazel_dep(name = "score_rust_policies", version = "0.0.5")
 bazel_dep(name = "score_bazel_platforms", version = "0.1.2")
 bazel_dep(name = "score_crates", version = "0.0.10", repo_name = "score_communication_crate_index")
 
