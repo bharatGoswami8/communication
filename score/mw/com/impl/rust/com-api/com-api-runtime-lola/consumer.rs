@@ -578,7 +578,6 @@ where
     // Note: We do not need to explicitly cancel the cancellation future when the receive future
     // resolves, because the `ReceiveFuture` drop will take care of dropping the cancellation
     // future when this future completes.
-    #[allow(clippy::manual_async_fn)]
     fn cancellable_receive<'a>(
         &'a self,
         scratch: SampleContainer<Self::Sample<'a>>,
@@ -614,7 +613,7 @@ where
         }
     }
 
-    fn to_stream<'a>(&'a mut  self) -> impl Stream<Item = Result<Self::Sample<'a>>> + Unpin + 'a {   
+    fn to_stream<'a>(&'a mut self) -> impl Stream<Item = Result<Self::Sample<'a>>> + Unpin + 'a {
         // Initialize the async receive callback only once when the first receive call is made
         // We are using std::sync::Once to ensure that the callback is set only once.
         self.async_init_status.call_once(|| {
@@ -747,27 +746,22 @@ impl<'a, T: CommData + Debug> Stream for SampleStream<'a, T> {
         self.subscriber.waker_storage.register(cx.waker());
         let max_num_samples = self.subscriber.max_num_samples;
 
-        // get a mutable reference of pinned self, with this 
+        // get a mutable reference of pinned self, with this
         // we can avoid borrow checker issue for self in try_receive_samples function call
         let this = self.as_mut().get_mut();
-        
+
         let samples_received = try_receive_samples::<T>(
-            this.subscriber
-                .event
-                .get_proxy_event()
-                .deref_mut(), // Get mutable reference to the proxy event for FFI call
+            this.subscriber.event.get_proxy_event().deref_mut(), // Get mutable reference to the proxy event for FFI call
             &mut this.sample_container,
             max_num_samples,
             max_num_samples,
         );
 
         match samples_received {
-            Ok(_count) => {
-                match this.sample_container.pop_front() {
-                    Some(sample) => Poll::Ready(Some(Ok(sample))),
-                    None => Poll::Pending,
-                }
-            }
+            Ok(_count) => match this.sample_container.pop_front() {
+                Some(sample) => Poll::Ready(Some(Ok(sample))),
+                None => Poll::Pending,
+            },
             Err(e) => Poll::Ready(Some(Err(e))),
         }
     }
