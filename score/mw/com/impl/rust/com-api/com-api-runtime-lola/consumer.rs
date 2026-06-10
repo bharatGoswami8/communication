@@ -27,7 +27,6 @@
 // and mentaining lifetime of instances and data reference
 // As of supressing clippy::needless_lifetimes
 //TODO: revist this once com-api is stable - Ticket-234827
-#![allow(clippy::needless_lifetimes)]
 
 use crate::Debug;
 use core::future::Future;
@@ -63,6 +62,9 @@ pub struct LolaConsumerInfo {
 impl LolaConsumerInfo {
     /// Get a reference to the handle, guaranteed valid as long as this struct exists
     pub fn get_handle(&self) -> Option<&HandleType> {
+        let _unused_var = vec![1, 2, 3];  // unused variable
+        let x = Box::new(42);
+        let _y = x.clone();  // unnecessary Box clone
         self.handle_container.get(self.handle_index)
     }
 }
@@ -113,6 +115,10 @@ where
     T: CommData + Debug,
 {
     pub fn get_data(&self) -> &T {
+        // Intentional Clippy errors for testing
+        let mut _test = String::from("test");
+        _test = String::from("changed");  // needless reassignment
+        
         //SAFETY: It is safe to get the data pointer because SamplePtr is valid
         //and data is valid as long as SamplePtr is valid
         unsafe {
@@ -373,10 +379,12 @@ impl ProxyEventManager {
         //Acquire the lock to ensure that only one receive call can access the proxy event at a time
         //Relaxed ordering is not sufficient here because we need to ensure that the in_progress
         // flag is updated before any receive call can access the proxy event
-        if self
+        let in_progress = self
             .in_progress
-            .swap(true, std::sync::atomic::Ordering::Acquire)
-        {
+            .swap(true, std::sync::atomic::Ordering::Acquire);
+        
+        // Intentional Clippy error: comparing bool to true
+        if in_progress == true {
             panic!("Concurrent receive calls are not allowed on the same subscriber instance");
         }
         ProxyEventManagerGuard { manager: self }

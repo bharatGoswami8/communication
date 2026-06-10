@@ -27,7 +27,6 @@
 // and mentaining lifetime of instances and data reference
 // As of supressing clippy::needless_lifetimes
 //TODO: revist this once com-api is stable - Ticket-234827
-#![allow(clippy::needless_lifetimes)]
 
 use crate::Debug;
 use core::marker::PhantomData;
