@@ -23,11 +23,12 @@ pub type VehicleOfferedProducer<R> =
 
 // Example struct demonstrating composition with VehicleConsumer
 pub struct VehicleMonitorProducer<R: Runtime> {
-    pub producer: VehicleOfferedProducer<R>,
+    pub(crate) producer: VehicleOfferedProducer<R>,
 }
 
 pub struct VehicleMonitorConsumer<R: Runtime> {
-    pub tire_subscriber: <<R as Runtime>::Subscriber<Tire> as Subscriber<Tire, R>>::Subscription,
-    pub _exhaust_subscriber:
+    pub(crate) tire_subscriber:
+        <<R as Runtime>::Subscriber<Tire> as Subscriber<Tire, R>>::Subscription,
+    pub(crate) _exhaust_subscriber:
         <<R as Runtime>::Subscriber<Exhaust> as Subscriber<Exhaust, R>>::Subscription,
 }
