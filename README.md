@@ -7,6 +7,9 @@
 
 ## Overview
 
+
+
+
 The Communication Module (also known as **LoLa** - Low Latency) is an open-source implementation that provides:
 
 - **High-Performance Intra-ECU IPC**: Zero-copy shared-memory communication for minimal latency within ECUs
