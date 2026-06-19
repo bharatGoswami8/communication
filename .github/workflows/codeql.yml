@@ -47,8 +47,8 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Free Disk Space (Ubuntu)
-        uses: eclipse-score/more-disk-space@v1
+      - name: Setup build environment
+        uses: ./.github/actions/setup-bazel-lint
         with:
           level: 4
 
