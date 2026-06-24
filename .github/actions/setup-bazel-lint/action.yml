@@ -59,4 +59,8 @@ runs:
         cache-optimized: true
         cache-save: ${{ inputs.cache-save }}
     - name: Allow linux-sandbox
-      uses: ./actions/unblock_user_namespace_for_linux_sandbox
+      shell: bash
+      run: |
+        # Bazel's linux sandbox requires unprivileged user namespaces.
+        # On Ubuntu 24.04 runners this is disabled by default; enable it.
+        sudo sysctl -w kernel.unprivileged_userns_clone=1 || true
