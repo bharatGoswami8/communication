@@ -23,6 +23,9 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::thread;
 
+use score_log as log;
+use stdout_logger::StdoutLoggerBuilder;
+
 use com_api::{Builder, InstanceSpecifier, LolaRuntimeBuilderImpl, Runtime, RuntimeBuilder};
 
 use com_api_example::{ExampleType, VehicleMonitorConsumer, VehicleMonitorProducer};
@@ -66,7 +69,7 @@ const ASYNC_PRODUCER_STARTUP_DELAY_MS: u64 = 2000;
 
 // Run the consumer with the specified runtime and example type
 fn run_consumer<R: Runtime>(name: &str, example_type: &ExampleType, runtime: &R) {
-    println!("\n=== Running with {name} runtime ===");
+    log::info!("Running with {} runtime", name);
     let service_id = InstanceSpecifier::new("/Vehicle/Service1/Instance")
         .expect("Failed to create InstanceSpecifier");
     if matches!(example_type, ExampleType::Sync) {
@@ -82,12 +85,12 @@ fn run_consumer<R: Runtime>(name: &str, example_type: &ExampleType, runtime: &R)
     .expect("Failed to create consumer");
     futures::executor::block_on(consumer_monitor.run_receive(example_type, SAMPLE_COUNT));
     consumer_monitor.unsubscribe();
-    println!("=== {name} runtime completed ===\n");
+    log::info!("runtime execution completed");
 }
 
 // Run the producer with the specified runtime and example type
 fn run_producer<R: Runtime>(name: &str, example_type: &ExampleType, runtime: &R) {
-    println!("\n=== Running with {name} runtime ===");
+    log::info!("Running with {} runtime", name);
     let service_id = InstanceSpecifier::new("/Vehicle/Service1/Instance")
         .expect("Failed to create InstanceSpecifier");
     // In async examples, we will not wait before offering the service to simulate async discovery.
@@ -98,7 +101,7 @@ fn run_producer<R: Runtime>(name: &str, example_type: &ExampleType, runtime: &R)
     }
     let producer_monitor =
         VehicleMonitorProducer::new(runtime, service_id).expect("Failed to create producer");
-    println!("Producer created and offered successfully");
+    log::info!("Producer created and offered successfully");
     producer_monitor.run_publish_loop(INITIAL_TIRE_PRESSURE, SAMPLE_COUNT);
     producer_monitor.unoffer();
 }
@@ -115,7 +118,16 @@ fn create_lola_runtime_builder(config_path: &std::path::Path) -> LolaRuntimeBuil
     lola_runtime_builder
 }
 
+fn init_logging() {
+    StdoutLoggerBuilder::new()
+        .show_module(false)
+        .show_file(true)
+        .show_line(false)
+        .set_as_default_logger();
+}
+
 fn main() {
+    init_logging();
     let args = Arguments::parse();
     let lola_runtime_builder = create_lola_runtime_builder(&args.service_instance_manifest);
     let lola_runtime = Arc::new(
